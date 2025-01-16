@@ -1,4 +1,4 @@
-package db_connection
+package db_connection_sql
 
 const (
 	Oracle   = "oracle"

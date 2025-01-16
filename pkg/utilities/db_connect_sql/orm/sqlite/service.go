@@ -1,10 +1,8 @@
-package postgres
+package sqlite
 
 import (
-	"fmt"
-	_ "github.com/go-sql-driver/mysql"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect/orm"
+	_ "github.com/mattn/go-sqlite3"
+	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql"
 	"log"
 	"time"
 	"xorm.io/xorm"
@@ -14,15 +12,14 @@ type service struct {
 	config db_connection.Config
 }
 
-var _ orm.Service = (*service)(nil)
+var _ Service = (*service)(nil)
 
 func NewService(c db_connection.Config) *service {
 	return &service{config: c}
 }
 
 func (s *service) Init() *xorm.Engine {
-	engine, err := xorm.NewEngine("mysql", fmt.Sprintf(s.config.Dns, s.config.User,
-		s.config.Password, s.config.Host, s.config.Port, s.config.Name))
+	engine, err := xorm.NewEngine("sqlite3", s.config.Dns)
 	if err != nil {
 		log.Fatal(err)
 	}

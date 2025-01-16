@@ -3,8 +3,7 @@ package oracle
 import (
 	"fmt"
 	_ "github.com/godror/godror"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect/orm"
+	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql"
 	"log"
 	"time"
 	"xorm.io/xorm"
@@ -14,7 +13,7 @@ type service struct {
 	config db_connection.Config
 }
 
-var _ orm.Service = (*service)(nil)
+var _ Service = (*service)(nil)
 
 func NewService(c db_connection.Config) *service {
 	return &service{config: c}

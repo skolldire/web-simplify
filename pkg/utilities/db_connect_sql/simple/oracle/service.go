@@ -1,11 +1,10 @@
-package sqlite
+package oracle
 
 import (
 	"database/sql"
 	"fmt"
-	_ "github.com/mattn/go-sqlite3"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect/simple"
+	_ "github.com/godror/godror"
+	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql"
 	"time"
 )
 
@@ -13,7 +12,7 @@ type service struct {
 	config db_connection.Config
 }
 
-var _ simple.Service = (*service)(nil)
+var _ Service = (*service)(nil)
 
 func NewService(cfg db_connection.Config) *service {
 	return &service{
@@ -22,7 +21,9 @@ func NewService(cfg db_connection.Config) *service {
 }
 
 func (s service) Init() *sql.DB {
-	db, err := sql.Open("sqlite3", s.config.Dns)
+	connLine := fmt.Sprintf(s.config.Dns, s.config.User, s.config.Password,
+		s.config.Host, s.config.Port, s.config.Name)
+	db, err := sql.Open("godror", connLine)
 	if err != nil {
 		panic(fmt.Errorf("error in sql.Open: %w", err))
 	}

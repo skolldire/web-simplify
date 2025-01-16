@@ -3,14 +3,14 @@ package tcp
 import (
 	"context"
 	"fmt"
-	"github.com/skolldire/web-simplify/pkg/utilities/logger"
+	"github.com/skolldire/web-simplify/pkg/utilities/log"
 	"net"
 	"sync"
 )
 
 type service struct {
 	server net.Listener
-	log    logger.Service
+	log    log.Service
 	port   string
 }
 
@@ -25,7 +25,7 @@ func NewService(d Dependencies) *service {
 	}
 }
 
-func initializeService(c Config, l logger.Service) *net.Listener {
+func initializeService(c Config, l log.Service) *net.Listener {
 	var wg sync.WaitGroup
 	defer wg.Done()
 	listener, err := net.Listen("tcp", ":"+c.Port)

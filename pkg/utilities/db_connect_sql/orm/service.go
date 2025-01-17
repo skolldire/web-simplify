@@ -1,35 +1,39 @@
 package orm
 
 import (
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql/orm/mysql"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql/orm/oracle"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql/orm/postgres"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql/orm/sqlite"
+	"fmt"
+	_ "github.com/go-sql-driver/mysql"
+	_ "github.com/godror/godror"
+	_ "github.com/lib/pq"
+	_ "github.com/mattn/go-sqlite3"
+	converter "github.com/skolldire/web-simplify/pkg/utilities/data_converter"
+	"time"
 	"xorm.io/xorm"
 )
 
 type service struct {
-	config db_connection.Config
+	config Config
 }
 
 var _ Service = (*service)(nil)
 
-func NewService(c db_connection.Config) *service {
+func NewService(c Config) *service {
 	return &service{config: c}
 }
 
 func (s *service) Init() *xorm.Engine {
-	switch s.config.Motor {
-	case db_connection.Mysql:
-		return mysql.NewService(s.config).Init()
-	case db_connection.Oracle:
-		return oracle.NewService(s.config).Init()
-	case db_connection.Postgres:
-		return postgres.NewService(s.config).Init()
-	case db_connection.SQLite:
-		return sqlite.NewService(s.config).Init()
-	default:
-		return nil
+	connLine := fmt.Sprintf(s.config.Dns, s.config.User, s.config.Password,
+		s.config.Host, s.config.Port, s.config.Name)
+	engine, err := xorm.NewEngine(converter.DBToDriverMap(s.config.Motor), connLine)
+	if err != nil {
+		panic(fmt.Errorf("error in xorm creation: %w", err))
 	}
+	err = engine.DB().Ping()
+	if err != nil {
+		panic(fmt.Errorf("error pinging db by xorm: %w", err))
+	}
+	engine.SetMaxIdleConns(s.config.MaxIdleCons)
+	engine.SetMaxOpenConns(s.config.MaxOpenCons)
+	engine.SetConnMaxLifetime(time.Minute * time.Duration(s.config.ConnMaxLifetime))
+	return engine
 }

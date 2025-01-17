@@ -76,3 +76,18 @@ func StructToMap(data interface{}) (map[string]interface{}, error) {
 
 	return mapa, nil
 }
+
+func DBToDriverMap(motor string) string {
+	switch motor {
+	case SQLite:
+		return SQLiteDriver
+	case Oracle:
+		return OracleDriver
+	case Mysql:
+		return MysqlDriver
+	case Postgres:
+		return PostgresDriver
+	default:
+		return ""
+	}
+}

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"github.com/skolldire/web-simplify/pkg/utilities/log"
 	"net"
-	"sync"
 )
 
 type service struct {
@@ -17,34 +16,20 @@ type service struct {
 var _ Service = (*service)(nil)
 
 func NewService(d Dependencies) *service {
-	s := initializeService(d.Config, d.Log)
+	listener, err := net.Listen("tcp", ":"+d.Config.Port)
+	if err != nil {
+		d.Log.Error(context.Background(), err, map[string]interface{}{
+			"port": d.Config.Port, "message": "Error starting server"})
+		return nil
+	}
+	d.Log.Info(context.Background(), fmt.Sprintf("%s Server listening", d.Config.InstanceName),
+		map[string]interface{}{"port": d.Config.Port})
+
 	return &service{
-		server: *s,
+		server: listener,
 		log:    d.Log,
 		port:   d.Config.Port,
 	}
-}
-
-func initializeService(c Config, l log.Service) *net.Listener {
-	var wg sync.WaitGroup
-	defer wg.Done()
-	listener, err := net.Listen("tcp", ":"+c.Port)
-	if err != nil {
-		l.Error(context.Background(), err, map[string]interface{}{
-			"port": c.Port, "message": "Error starting server"})
-		return nil
-	}
-	defer func(listener net.Listener) {
-		err := listener.Close()
-		if err != nil {
-			l.Error(context.Background(), err,
-				map[string]interface{}{"port": c.Port,
-					"message": "Error closing listener"})
-		}
-	}(listener)
-	l.Info(context.Background(), fmt.Sprintf("%s Server listening", c.InstanceName),
-		map[string]interface{}{"port": c.Port})
-	return &listener
 }
 
 func (s *service) GetMessage(f ProcessingFunc) {
@@ -52,40 +37,49 @@ func (s *service) GetMessage(f ProcessingFunc) {
 		conn, err := s.server.Accept()
 		if err != nil {
 			s.log.Error(context.Background(), err,
-				map[string]interface{}{"port": s.port,
-					"message": "Error accepting connection",
-					"client":  conn.RemoteAddr().String()})
+				map[string]interface{}{"port": s.port, "message": "Error accepting connection"})
 			continue
 		}
-		s.log.Info(context.Background(), "New connection accepted on port",
-			map[string]interface{}{"port": s.port,
-				"client": conn.RemoteAddr().String()})
+		s.log.Info(context.Background(), "New connection accepted",
+			map[string]interface{}{"port": s.port, "client": conn.RemoteAddr().String()})
 		go s.handleConnection(conn, f)
 	}
 }
 
 func (s *service) handleConnection(conn net.Conn, f ProcessingFunc) {
-	defer func(conn net.Conn) {
+	defer func() {
 		err := conn.Close()
 		if err != nil {
 			s.log.Error(context.Background(), err,
 				map[string]interface{}{"message": "Error closing connection"})
-			return
 		}
-	}(conn)
+	}()
+
+	buf := make([]byte, 1024)
 	for {
-		buf := make([]byte, 1024)
 		n, err := conn.Read(buf)
 		if err != nil {
+			if err.Error() == "EOF" {
+				s.log.Info(context.Background(), "Client disconnected",
+					map[string]interface{}{"client": conn.RemoteAddr().String()})
+				break
+			}
 			s.log.Error(context.Background(), err,
 				map[string]interface{}{"message": "Error reading from connection"})
+			break
 		}
 		message := string(buf[:n])
 		response, err := f(message)
+		if err != nil {
+			s.log.Error(context.Background(), err,
+				map[string]interface{}{"message": "Error processing message"})
+			continue
+		}
 		_, err = conn.Write([]byte(response))
 		if err != nil {
-			fmt.Println("Error responding:", err)
-			return
+			s.log.Error(context.Background(), err,
+				map[string]interface{}{"message": "Error writing response"})
+			break
 		}
 	}
 }

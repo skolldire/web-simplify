@@ -3,8 +3,8 @@ package txt_file
 import (
 	"encoding/json"
 	"fmt"
-	"github.com/skolldire/cash-manager-toolkit/pkg/kit/error_wrapper"
-	"github.com/skolldire/cash-manager-toolkit/pkg/kit/file_util"
+	"github.com/skolldire/web-simplify/pkg/utilities/error_handler"
+	"github.com/skolldire/web-simplify/pkg/utilities/file_utils"
 	"io"
 	"os"
 )
@@ -35,8 +35,8 @@ func Write[I any](path string, data []I) error {
 func Read[O any](path string) ([]O, error) {
 	file, err := os.Open(path)
 	if err != nil {
-		return nil, error_wrapper.NewCommonApiError(file_util.CFE.Code,
-			fmt.Sprintf(file_util.CFE.Msg, "xml"), err, file_util.CFE.HttpCode)
+		return nil, error_handler.NewCommonApiError(file_utils.CFE.Code,
+			fmt.Sprintf(file_utils.CFE.Msg, "xml"), err, file_utils.CFE.HttpCode)
 	}
 	defer file.Close()
 	bytes, err := io.ReadAll(file)

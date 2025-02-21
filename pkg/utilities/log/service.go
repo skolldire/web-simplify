@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"github.com/sirupsen/logrus"
+	"go.elastic.co/ecslogrus"
+	"os"
 	"strings"
 	"sync"
 )
@@ -14,40 +16,49 @@ type service struct {
 }
 
 var _ Service = (*service)(nil)
+
 var once sync.Once
 var l *logrus.Logger
 
-func NewService(level string) *service {
+func NewService(c Config) *service {
 	once.Do(func() {
 		l = logrus.New()
-		l.Level = loggerLevel(level)
+		l.Formatter = &ecslogrus.Formatter{}
+		l.Level = loggerLevel(c.Level)
+		fileLog := c.LogDestination
+		file, err := os.OpenFile(fileLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err == nil {
+			l.SetOutput(file)
+		}
+		defer file.Close()
+		l.Info("app started...")
 	})
 	return &service{
 		Log: l,
 	}
 }
 
-func (l service) Info(ctx context.Context, msg string, fields map[string]interface{}) {
+func (l *service) Info(ctx context.Context, msg string, fields map[string]interface{}) {
 	l.Log.WithContext(ctx)
 	l.Log.Info(msg, fields)
 }
 
-func (l service) Error(ctx context.Context, err error, fields map[string]interface{}) {
+func (l *service) Error(ctx context.Context, err error, fields map[string]interface{}) {
 	l.Log.WithContext(ctx)
 	l.Log.Error(err, fields)
 }
 
-func (l service) Debug(ctx context.Context, fields map[string]interface{}) {
+func (l *service) Debug(ctx context.Context, fields map[string]interface{}) {
 	l.Log.WithContext(ctx)
 	l.Log.Debug(fields)
 }
 
-func (l service) Warn(ctx context.Context, fields map[string]interface{}) {
+func (l *service) Warn(ctx context.Context, fields map[string]interface{}) {
 	l.Log.WithContext(ctx)
 	l.Log.Warn(fields)
 }
 
-func (l service) WrapError(err error, msg string) error {
+func (l *service) WrapError(err error, msg string) error {
 	if err == nil {
 		return errors.New(msg)
 	}

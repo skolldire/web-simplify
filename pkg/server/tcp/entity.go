@@ -1,7 +1,7 @@
 package tcp
 
 import (
-	"github.com/skolldire/cash-manager-toolkit/pkg/client/log"
+	"github.com/skolldire/web-simplify/pkg/utilities/log"
 )
 
 type Service interface {

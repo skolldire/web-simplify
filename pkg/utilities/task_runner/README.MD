@@ -21,7 +21,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	tr "github.com/skolldire/cash-manager-toolkit/pkg/kit/task_runner"
+	tr "github.com/skolldire/web-simplify/pkg/task_runner/task_runner"
 )
 
 func main() {

@@ -7,5 +7,9 @@ type Service interface {
 	Error(ctx context.Context, err error, fields map[string]interface{})
 	Debug(ctx context.Context, fields map[string]interface{})
 	Warn(ctx context.Context, fields map[string]interface{})
-	WrapError(err error, msg string) error
+}
+
+type Config struct {
+	Level          string
+	LogDestination string
 }

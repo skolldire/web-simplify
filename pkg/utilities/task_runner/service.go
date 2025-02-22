@@ -6,28 +6,48 @@ import (
 	"time"
 )
 
-// Execute all tasks in parallel and collect the results.
-func Execute(ctx context.Context, tasks map[string]Tasker) map[string]Result {
-	var mutex sync.Mutex
+func WorkerPool(ctx context.Context, tasks map[string]Tasker, numWorkers int) map[string]Result {
+	taskChan := make(chan struct {
+		id   string
+		task Tasker
+	}, len(tasks))
+	resultChan := make(chan Result, len(tasks))
 	var wg sync.WaitGroup
-	results := make(map[string]Result)
 
-	for id, task := range tasks {
+	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go func(id string, task Tasker) {
+		go func() {
 			defer wg.Done()
-			res, t, err := task.Execute(ctx)
-			mutex.Lock()
-			results[id] = Result{ID: id, Err: err, Res: res, Time: t}
-			mutex.Unlock()
-		}(id, task)
+			for t := range taskChan {
+				res, tTime, err := t.task.Execute(ctx)
+				resultChan <- Result{ID: t.id, Res: res, Err: err, Time: tTime}
+			}
+		}()
 	}
-	wg.Wait()
+
+	go func() {
+		for id, task := range tasks {
+			taskChan <- struct {
+				id   string
+				task Tasker
+			}{id, task}
+		}
+		close(taskChan)
+	}()
+
+	go func() {
+		wg.Wait()
+		close(resultChan)
+	}()
+
+	results := make(map[string]Result)
+	for res := range resultChan {
+		results[res.ID] = res
+	}
 
 	return results
 }
 
-// Execute the task and returns the result and execution time.
 func (t Task[I, O]) Execute(ctx context.Context) (interface{}, int, error) {
 	start := time.Now()
 	out, err := t.Func(ctx, t.Args)

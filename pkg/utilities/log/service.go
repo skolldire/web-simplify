@@ -2,8 +2,7 @@ package log
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	"github.com/pkg/errors"
 	"github.com/sirupsen/logrus"
 	"go.elastic.co/ecslogrus"
 	"os"
@@ -20,17 +19,20 @@ var _ Service = (*service)(nil)
 var once sync.Once
 var l *logrus.Logger
 
+// NewService initializes the logging service
 func NewService(c Config) *service {
 	once.Do(func() {
 		l = logrus.New()
 		l.Formatter = &ecslogrus.Formatter{}
 		l.Level = loggerLevel(c.Level)
+
 		fileLog := c.LogDestination
 		file, err := os.OpenFile(fileLog, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err == nil {
 			l.SetOutput(file)
+		} else {
+			l.Warn("No se pudo abrir el archivo de log, usando salida estándar")
 		}
-		defer file.Close()
 		l.Info("app started...")
 	})
 	return &service{
@@ -39,31 +41,37 @@ func NewService(c Config) *service {
 }
 
 func (l *service) Info(ctx context.Context, msg string, fields map[string]interface{}) {
-	l.Log.WithContext(ctx)
-	l.Log.Info(msg, fields)
+	l.Log.WithContext(ctx).WithFields(fields).Info(msg)
 }
 
-func (l *service) Error(ctx context.Context, err error, fields map[string]interface{}) {
-	l.Log.WithContext(ctx)
-	l.Log.Error(err, fields)
+func (l *service) Error(ctx context.Context, err error, msg string, fields map[string]interface{}) {
+	if err == nil {
+		err = errors.New(msg)
+	} else {
+		err = l.WrapError(err, msg)
+	}
+
+	l.Log.WithContext(ctx).WithFields(fields).Error(err)
 }
 
 func (l *service) Debug(ctx context.Context, fields map[string]interface{}) {
-	l.Log.WithContext(ctx)
-	l.Log.Debug(fields)
+	l.Log.WithContext(ctx).WithFields(fields).Debug()
 }
 
 func (l *service) Warn(ctx context.Context, fields map[string]interface{}) {
-	l.Log.WithContext(ctx)
-	l.Log.Warn(fields)
+	l.Log.WithContext(ctx).WithFields(fields).Warn()
+}
+
+func (l *service) FatalError(ctx context.Context, err error, fields map[string]interface{}) {
+	l.Log.WithContext(ctx).WithFields(fields).Fatal(err)
+	os.Exit(1)
 }
 
 func (l *service) WrapError(err error, msg string) error {
 	if err == nil {
 		return errors.New(msg)
 	}
-
-	return fmt.Errorf("%w %s", err, msg)
+	return errors.Wrap(err, msg)
 }
 
 func loggerLevel(level string) logrus.Level {

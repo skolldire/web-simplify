@@ -4,6 +4,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/skolldire/web-simplify/pkg/server/tcp"
 	"github.com/skolldire/web-simplify/pkg/server/web_socket"
+	"github.com/skolldire/web-simplify/pkg/utilities/log"
 	"net/http"
 	"sync"
 )
@@ -29,6 +30,7 @@ type App struct {
 	wsServers   map[string]web_socket.Service
 	wsHandlers  map[string]web_socket.ProcessingFunc
 	mu          sync.Mutex
+	log         log.Service
 }
 
 type Config struct {

@@ -7,10 +7,11 @@ import (
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/skolldire/web-simplify/pkg/server/tcp"
 	"github.com/skolldire/web-simplify/pkg/server/web_socket"
+	"github.com/skolldire/web-simplify/pkg/simplify/simple_router/docsify"
+	"github.com/skolldire/web-simplify/pkg/simplify/simple_router/ping"
+	"github.com/skolldire/web-simplify/pkg/simplify/simple_router/swagger"
 	"github.com/skolldire/web-simplify/pkg/utilities/app_profile"
-	"github.com/skolldire/web-simplify/pkg/utilities/simple_router/docsify"
-	"github.com/skolldire/web-simplify/pkg/utilities/simple_router/ping"
-	"github.com/skolldire/web-simplify/pkg/utilities/simple_router/swagger"
+	"github.com/skolldire/web-simplify/pkg/utilities/log"
 	"net/http"
 	"net/http/pprof"
 	"os"
@@ -18,7 +19,7 @@ import (
 
 var _ Service = (*App)(nil)
 
-func NewService(c Config) Service {
+func NewService(c Config, l log.Service) Service {
 	routes := initRoutes()
 	if routes == nil {
 		panic("Router initialization failed")
@@ -31,6 +32,7 @@ func NewService(c Config) Service {
 		tcpHandlers: make(map[string]tcp.ProcessingFunc),
 		wsServers:   make(map[string]web_socket.Service),
 		wsHandlers:  make(map[string]web_socket.ProcessingFunc),
+		log:         l,
 	}
 }
 

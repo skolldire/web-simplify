@@ -3,7 +3,7 @@
 package mocks
 
 import (
-	read_properties "github.com/skolldire/web-simplify/pkg/utilities/read_properties"
+	"github.com/skolldire/web-simplify/pkg/config/read_properties"
 	mock "github.com/stretchr/testify/mock"
 )
 

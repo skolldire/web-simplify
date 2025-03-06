@@ -5,13 +5,13 @@ import (
 	"github.com/skolldire/web-simplify/pkg/client/rest"
 	"github.com/skolldire/web-simplify/pkg/server/tcp"
 	"github.com/skolldire/web-simplify/pkg/server/web_socket"
+	"github.com/skolldire/web-simplify/pkg/simplify/simple_router"
 	"github.com/skolldire/web-simplify/pkg/utilities/log"
-	"github.com/skolldire/web-simplify/pkg/utilities/simple_router"
 	"xorm.io/xorm"
 )
 
 type Engine struct {
-	App                 *simple_router.App
+	App                 simple_router.Service
 	Tracer              log.Service
 	RestClients         map[string]rest.Service
 	DBOrmConnections    map[string]*xorm.Engine

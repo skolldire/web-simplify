@@ -2,10 +2,10 @@ package read_properties
 
 import (
 	"github.com/skolldire/web-simplify/pkg/client/rest"
+	"github.com/skolldire/web-simplify/pkg/database/connect_sql/orm"
+	"github.com/skolldire/web-simplify/pkg/database/connect_sql/simple"
 	"github.com/skolldire/web-simplify/pkg/server/tcp"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql/orm"
-	"github.com/skolldire/web-simplify/pkg/utilities/db_connect_sql/simple"
-	"github.com/skolldire/web-simplify/pkg/utilities/simple_router"
+	"github.com/skolldire/web-simplify/pkg/simplify/simple_router"
 	"sync"
 )
 

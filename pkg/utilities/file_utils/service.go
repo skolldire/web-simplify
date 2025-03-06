@@ -1,17 +1,19 @@
 package file_utils
 
 import (
+	"fmt"
 	"os"
 )
 
-func ListFiles(dir string) ([]string, error) {
-	var files []string
-	read, err := os.ReadDir(dir)
+func ListFiles(path string) ([]string, error) {
+	files, err := os.ReadDir(path)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error reading configuration directory: %w", err)
 	}
-	for _, file := range read {
-		files = append(files, file.Name())
+
+	var fileNames []string
+	for _, file := range files {
+		fileNames = append(fileNames, file.Name())
 	}
-	return files, nil
+	return fileNames, nil
 }

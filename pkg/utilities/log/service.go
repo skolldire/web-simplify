@@ -63,7 +63,7 @@ func (l *service) Warn(ctx context.Context, fields map[string]interface{}) {
 }
 
 func (l *service) FatalError(ctx context.Context, err error, fields map[string]interface{}) {
-	l.Log.WithContext(ctx).WithFields(fields).Fatal(err)
+	l.Log.WithContext(ctx).WithFields(fields).Error(err)
 	os.Exit(1)
 }
 

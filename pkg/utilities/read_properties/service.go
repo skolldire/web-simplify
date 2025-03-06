@@ -1,60 +1,55 @@
-package viper
+package read_properties
 
 import (
 	"fmt"
+	"github.com/fsnotify/fsnotify"
+	"github.com/skolldire/web-simplify/pkg/utilities/app_profile"
+	"github.com/skolldire/web-simplify/pkg/utilities/file_utils"
 	"os"
 	"strings"
 
 	"github.com/mitchellh/mapstructure"
-	"github.com/skolldire/web-simplify/pkg/utilities/app_profile"
-	rp "github.com/skolldire/web-simplify/pkg/utilities/read_properties"
 	"github.com/spf13/viper"
 )
 
-const errorLoadingConfiguration = "error loading configuration - %w"
+var _ Service = (*service)(nil)
 
-type service struct {
-	propertyFiles []string
-	path          string
+func NewService() Service {
+	once.Do(func() {
+		instance = &service{
+			propertyFiles: getPropertyFiles(),
+			path:          getConfigPath(),
+		}
+	})
+	return instance
 }
 
-func NewService() *service {
-	return &service{
-		propertyFiles: []string{
-			"application.yaml",
-			"application-local.yaml",
-			"application-pt.yaml",
-			"application-qa.yaml",
-			"application-prod.yaml",
-		},
-		path: getConfigPath(),
-	}
-}
-
-// Apply loads the configuration and maps it to a struct
-func (s *service) Apply() (rp.Config, error) {
+func (s *service) Apply() (Config, error) {
 	if err := s.validateRequiredFiles(); err != nil {
-		return rp.Config{}, err
+		return Config{}, err
 	}
 
 	mergedConfig, err := s.loadAndMergeConfigs()
 	if err != nil {
-		return rp.Config{}, fmt.Errorf(errorLoadingConfiguration, err)
+		return Config{}, fmt.Errorf("error loading configuration - %w", err)
 	}
 
 	return s.mapConfigToStruct(mergedConfig)
 }
 
-// validateRequiredFiles ensures all necessary property files are present
 func (s *service) validateRequiredFiles() error {
-	missingFiles := getMissingFiles(s.propertyFiles, listFiles(s.path))
+	files, err := file_utils.ListFiles(s.path)
+	if err != nil {
+		return err
+	}
+
+	missingFiles := getMissingFiles(s.propertyFiles, files)
 	if len(missingFiles) > 0 {
 		return fmt.Errorf("missing required files: %v", missingFiles)
 	}
 	return nil
 }
 
-// loadAndMergeConfigs loads and merges the base and environment-specific configurations
 func (s *service) loadAndMergeConfigs() (*viper.Viper, error) {
 	baseConfig, err := loadConfig(s.path, "application")
 	if err != nil {
@@ -73,26 +68,24 @@ func (s *service) loadAndMergeConfigs() (*viper.Viper, error) {
 	return baseConfig, nil
 }
 
-// mapConfigToStruct decodes and validates the configuration into a struct
-func (s *service) mapConfigToStruct(v *viper.Viper) (rp.Config, error) {
+func (s *service) mapConfigToStruct(v *viper.Viper) (Config, error) {
 	configMap, err := unmarshalConfig(v)
 	if err != nil {
-		return rp.Config{}, err
+		return Config{}, err
 	}
 
 	processedConfig, err := processConfigValues(configMap)
 	if err != nil {
-		return rp.Config{}, err
+		return Config{}, err
 	}
 
 	return decodeToStruct(processedConfig)
 }
 
-// getPropertyFileName determines the name of the environment-specific configuration file
 func (s *service) getPropertyFileName() string {
 	scopeFile := fmt.Sprintf("application-%s", app_profile.GetScopeValue())
 	profileFile := fmt.Sprintf("application-%s", app_profile.GetProfileByScope())
-	files := listFiles(s.path)
+	files, _ := file_utils.ListFiles(s.path)
 
 	if contains(files, scopeFile) {
 		return scopeFile
@@ -100,7 +93,21 @@ func (s *service) getPropertyFileName() string {
 	return profileFile
 }
 
-// Helper Functions
+func getPropertyFiles() []string {
+	requiredFiles := []string{
+		"application.yaml",
+		"application-local.yaml",
+		"application-prod.yaml",
+	}
+	scopeFile := fmt.Sprintf("application-%s.yaml", app_profile.GetScopeValue())
+
+	if scopeFile != "application-local.yaml" && scopeFile != "application-prod.yaml" {
+		requiredFiles = append(requiredFiles, scopeFile)
+	}
+
+	return requiredFiles
+}
+
 func getConfigPath() string {
 	if path := os.Getenv("CONF_DIR"); path != "" {
 		return path
@@ -113,10 +120,23 @@ func loadConfig(path, filename string) (*viper.Viper, error) {
 	v.AddConfigPath(path)
 	v.SetConfigName(filename)
 	v.AutomaticEnv()
+
 	if err := v.ReadInConfig(); err != nil {
 		return nil, err
 	}
+
+	if v.GetBool("enable_config_watch") {
+		watchConfig(v)
+	}
+
 	return v, nil
+}
+
+func watchConfig(v *viper.Viper) {
+	v.WatchConfig()
+	v.OnConfigChange(func(e fsnotify.Event) {
+		fmt.Printf("Config file changed: %s\n", e.Name)
+	})
 }
 
 func unmarshalConfig(v *viper.Viper) (map[string]interface{}, error) {
@@ -173,30 +193,26 @@ func processSliceValues(slice []interface{}) ([]interface{}, error) {
 
 func resolveEnvValue(value string) string {
 	if strings.HasPrefix(value, "${") && strings.HasSuffix(value, "}") {
-		return os.Getenv(strings.Trim(value, "${}"))
+		trimmed := strings.Trim(value, "${}")
+		parts := strings.SplitN(trimmed, ":-", 2)
+		envValue := os.Getenv(parts[0])
+
+		if envValue != "" {
+			return envValue
+		}
+		if len(parts) > 1 {
+			return parts[1]
+		}
 	}
 	return value
 }
 
-func decodeToStruct(config map[string]interface{}) (rp.Config, error) {
-	var result rp.Config
+func decodeToStruct(config map[string]interface{}) (Config, error) {
+	var result Config
 	if err := mapstructure.Decode(config, &result); err != nil {
-		return rp.Config{}, err
+		return Config{}, err
 	}
 	return result, nil
-}
-
-func listFiles(path string) []string {
-	files, err := os.ReadDir(path)
-	if err != nil {
-		panic(fmt.Errorf("error reading configuration directory: %w", err))
-	}
-
-	var fileNames []string
-	for _, file := range files {
-		fileNames = append(fileNames, file.Name())
-	}
-	return fileNames
 }
 
 func getMissingFiles(required, available []string) []string {

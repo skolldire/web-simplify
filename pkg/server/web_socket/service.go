@@ -9,18 +9,20 @@ import (
 	"github.com/coder/websocket"
 )
 
-func NewServer(l log.Service) *Server {
-	return &Server{
+var _ Service = (*server)(nil)
+
+func NewServer(l log.Service) Service {
+	return &server{
 		clients: make(map[*Client]bool),
 		log:     l,
 	}
 }
 
-func (s *Server) SetProcessingFunc(f ProcessingFunc) {
+func (s *server) SetProcessingFunc(f ProcessingFunc) {
 	s.processor = f
 }
 
-func (s *Server) HandleNewConnection(w http.ResponseWriter, r *http.Request) {
+func (s *server) HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 	conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 	if err != nil {
 		s.log.Info(r.Context(), "Failed to accept connection", map[string]interface{}{"error": err.Error()})
@@ -38,27 +40,25 @@ func (s *Server) HandleNewConnection(w http.ResponseWriter, r *http.Request) {
 	go s.listenForMessages(c)
 }
 
-func (s *Server) listenForMessages(c *Client) {
+func (s *server) listenForMessages(c *Client) {
 	defer func() {
 		s.lock.Lock()
 		delete(s.clients, c)
 		s.lock.Unlock()
-		c.Conn.Close(websocket.StatusNormalClosure, "Closing connection")
+		_ = c.Conn.Close(websocket.StatusNormalClosure, "Closing connection")
 		s.log.Info(c.Ctx, "Client disconnected", map[string]interface{}{"ip": c.IP})
 	}()
 
 	for {
 		_, message, err := c.Conn.Read(c.Ctx)
 		if err != nil {
-			s.log.Error(c.Ctx, err, nil)
+			s.log.Error(c.Ctx, err, "error to listen client", nil)
 			break
 		}
-		s.log.Info(c.Ctx, "Received message", map[string]interface{}{"ip": c.IP, "message": string(message)})
-
 		if s.processor != nil {
 			processedMessage, err := s.processor(message)
 			if err != nil {
-				s.log.Error(c.Ctx, err, map[string]interface{}{"ip": c.IP, "message": string(message)})
+				s.log.Error(c.Ctx, err, "error to receive message", map[string]interface{}{"ip": c.IP, "message": string(message)})
 				continue
 			}
 			s.sendMessageToClient(c, processedMessage)
@@ -66,13 +66,13 @@ func (s *Server) listenForMessages(c *Client) {
 	}
 }
 
-func (s *Server) sendMessageToClient(client *Client, message []byte) {
+func (s *server) sendMessageToClient(client *Client, message []byte) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
 
 	if err := client.Conn.Write(client.Ctx, websocket.MessageText, message); err != nil {
-		s.log.Error(client.Ctx, err, nil)
-		client.Conn.Close(websocket.StatusInternalError, "Error in sending message")
+		s.log.Error(client.Ctx, err, "error to send message", nil)
+		_ = client.Conn.Close(websocket.StatusInternalError, "Error in sending message")
 		delete(s.clients, client)
 	}
 }

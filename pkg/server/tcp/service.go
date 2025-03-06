@@ -3,23 +3,16 @@ package tcp
 import (
 	"context"
 	"fmt"
-	"github.com/skolldire/web-simplify/pkg/utilities/log"
 	"net"
 )
 
-type service struct {
-	server net.Listener
-	log    log.Service
-	port   string
-}
-
 var _ Service = (*service)(nil)
 
-func NewService(d Dependencies) *service {
+func NewService(d Dependencies) Service {
 	listener, err := net.Listen("tcp", ":"+d.Config.Port)
 	if err != nil {
-		d.Log.Error(context.Background(), err, map[string]interface{}{
-			"port": d.Config.Port, "message": "Error starting server"})
+		d.Log.Error(context.Background(), err, "Error starting server", map[string]interface{}{
+			"port": d.Config.Port})
 		return nil
 	}
 	d.Log.Info(context.Background(), fmt.Sprintf("%s Server listening", d.Config.InstanceName),
@@ -32,17 +25,29 @@ func NewService(d Dependencies) *service {
 	}
 }
 
-func (s *service) GetMessage(f ProcessingFunc) {
+func (s *service) Start(ctx context.Context, f ProcessingFunc) {
+	go s.getMessage(ctx, f)
+}
+
+func (s *service) getMessage(ctx context.Context, f ProcessingFunc) {
 	for {
-		conn, err := s.server.Accept()
-		if err != nil {
-			s.log.Error(context.Background(), err,
-				map[string]interface{}{"port": s.port, "message": "Error accepting connection"})
-			continue
+		select {
+		case <-ctx.Done():
+			s.log.Info(context.Background(), "Shutting down TCP server",
+				map[string]interface{}{"port": s.port})
+			s.server.Close()
+			return
+		default:
+			conn, err := s.server.Accept()
+			if err != nil {
+				s.log.Error(context.Background(), err, "Error accepting connection",
+					map[string]interface{}{"port": s.port})
+				continue
+			}
+			s.log.Info(context.Background(), "New connection accepted",
+				map[string]interface{}{"port": s.port, "client": conn.RemoteAddr().String()})
+			go s.handleConnection(conn, f)
 		}
-		s.log.Info(context.Background(), "New connection accepted",
-			map[string]interface{}{"port": s.port, "client": conn.RemoteAddr().String()})
-		go s.handleConnection(conn, f)
 	}
 }
 
@@ -50,8 +55,7 @@ func (s *service) handleConnection(conn net.Conn, f ProcessingFunc) {
 	defer func() {
 		err := conn.Close()
 		if err != nil {
-			s.log.Error(context.Background(), err,
-				map[string]interface{}{"message": "Error closing connection"})
+			s.log.Error(context.Background(), err, "Error closing connection", nil)
 		}
 	}()
 
@@ -64,21 +68,18 @@ func (s *service) handleConnection(conn net.Conn, f ProcessingFunc) {
 					map[string]interface{}{"client": conn.RemoteAddr().String()})
 				break
 			}
-			s.log.Error(context.Background(), err,
-				map[string]interface{}{"message": "Error reading from connection"})
+			s.log.Error(context.Background(), err, "Error reading from connection", nil)
 			break
 		}
 		message := string(buf[:n])
 		response, err := f(message)
 		if err != nil {
-			s.log.Error(context.Background(), err,
-				map[string]interface{}{"message": "Error processing message"})
+			s.log.Error(context.Background(), err, "Error processing message", nil)
 			continue
 		}
 		_, err = conn.Write([]byte(response))
 		if err != nil {
-			s.log.Error(context.Background(), err,
-				map[string]interface{}{"message": "Error writing response"})
+			s.log.Error(context.Background(), err, "Error writing response", nil)
 			break
 		}
 	}

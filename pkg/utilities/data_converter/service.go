@@ -8,7 +8,6 @@ import (
 	"net/http"
 )
 
-// BytesToModel converts a byte array to a model
 func BytesToModel[O any](c []byte) (O, error) {
 	h := *new(O)
 	e := map[string]interface{}{}
@@ -27,7 +26,6 @@ func BytesToModel[O any](c []byte) (O, error) {
 	return h, nil
 }
 
-// ModelToBytes converts a model to a byte array
 func ModelToBytes[O any](c O) ([]byte, error) {
 	b, err := json.Marshal(c)
 	if err != nil {
@@ -37,7 +35,6 @@ func ModelToBytes[O any](c O) ([]byte, error) {
 	return b, nil
 }
 
-// MapToStructure converts a map to a structure
 func MapToStructure[O any](c map[string]interface{}) (O, error) {
 	h := *new(O)
 	cfg := &mapstructure.DecoderConfig{
@@ -54,8 +51,6 @@ func MapToStructure[O any](c map[string]interface{}) (O, error) {
 	return h, nil
 }
 
-// StructToMap converts a struct to a map[string]interface{} respecting the json annotations
-// Returns an error if the input is not a struct.
 func StructToMap(data interface{}) (map[string]interface{}, error) {
 
 	var mapa map[string]interface{}

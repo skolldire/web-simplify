@@ -45,7 +45,7 @@ func creteRequester(cs []map[string]rest.Config, l log.Service) map[string]rest.
 	requesters := map[string]rest.Service{}
 	for _, c := range cs {
 		for k, v := range c {
-			requesters[k] = rest.NewService(v, l)
+			requesters[k] = rest.NewClient(v, l)
 		}
 	}
 	return requesters

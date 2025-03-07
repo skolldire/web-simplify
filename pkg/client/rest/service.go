@@ -2,17 +2,20 @@ package rest
 
 import (
 	"context"
-	"github.com/go-resty/resty/v2"
-	"github.com/skolldire/web-simplify/pkg/utilities/log"
-	"github.com/sony/gobreaker"
+	"errors"
+	"fmt"
 	"math"
 	"math/rand"
 	"time"
+
+	"github.com/go-resty/resty/v2"
+	"github.com/skolldire/web-simplify/pkg/utilities/log"
+	"github.com/sony/gobreaker/v2"
 )
 
 var _ Service = (*client)(nil)
 
-func NewService(cfg Config, l log.Service) Service {
+func NewClient(cfg Config, l log.Service) Service {
 	r := &requester{
 		httpClient: createHttpClient(cfg, l),
 		breaker:    createCB(cfg, l),
@@ -25,17 +28,40 @@ func NewService(cfg Config, l log.Service) Service {
 	}
 }
 
-func createCB(c Config, l log.Service) *gobreaker.CircuitBreaker {
+func checkBreakerState(counts gobreaker.Counts, c Config, l log.Service) bool {
+	var failureRate float64
+	if counts.Requests > 0 {
+		failureRate = float64(counts.TotalFailures) / float64(counts.Requests)
+	}
+	l.Info(context.Background(), "Circuit Breaker Metrics",
+		map[string]interface{}{
+			"Total Requests":     counts.Requests,
+			"Total Successes":    counts.TotalSuccesses,
+			"Total Failures":     counts.TotalFailures,
+			"Failure Rate":       failureRate,
+			"ConsecutiveFails":   counts.ConsecutiveFailures,
+			"ConsecutiveSuccess": counts.ConsecutiveSuccesses,
+		})
+	if counts.ConsecutiveFailures > c.CBMaxRequests || (counts.Requests >= c.CBRequestThreshold && failureRate > c.CBFailureRateLimit) {
+		l.Info(context.Background(), "Circuit Breaker se abrirá debido a una alta tasa de fallos.", nil)
+		return true
+	}
+	return false
+}
+
+func createCB(c Config, l log.Service) *gobreaker.CircuitBreaker[any] {
 	if !c.WithCB {
 		return nil
 	}
-
-	return gobreaker.NewCircuitBreaker(gobreaker.Settings{
+	cbConfig := gobreaker.Settings{
 		Name:        c.CBName,
 		MaxRequests: c.CBMaxRequests,
 		Interval:    c.CBInterval,
 		Timeout:     c.CBTimeout,
-		ReadyToTrip: failureRateThreshold(c.CBRequestThreshold, c.CBFailureRateLimit),
+		ReadyToTrip: func(counts gobreaker.Counts) bool {
+			return checkBreakerState(counts, c, l)
+		},
+
 		OnStateChange: func(name string, from, to gobreaker.State) {
 			l.Warn(context.Background(), map[string]interface{}{
 				"name": name,
@@ -43,7 +69,10 @@ func createCB(c Config, l log.Service) *gobreaker.CircuitBreaker {
 				"to":   to,
 			})
 		},
-	})
+	}
+
+	cb := gobreaker.NewCircuitBreaker[any](cbConfig)
+	return cb
 }
 
 func exponentialBackoffWithJitter(initialWaitTime, maxWaitTime time.Duration, attempt int, l log.Service) time.Duration {
@@ -72,16 +101,6 @@ func exponentialBackoffWithJitter(initialWaitTime, maxWaitTime time.Duration, at
 	return waitTime
 }
 
-func failureRateThreshold(requestThreshold int, failureRateLimit float64) func(gobreaker.Counts) bool {
-	return func(counts gobreaker.Counts) bool {
-		if counts.Requests < uint32(requestThreshold) {
-			return false
-		}
-		failureRate := float64(counts.TotalFailures) / float64(counts.Requests)
-		return failureRate > failureRateLimit
-	}
-}
-
 func retryAfterFunc(initialWaitTime, maxWaitTime time.Duration, l log.Service) func(*resty.Client, *resty.Response) (time.Duration, error) {
 	return func(client *resty.Client, resp *resty.Response) (time.Duration, error) {
 		attempt := resp.Request.Attempt
@@ -106,9 +125,35 @@ func createHttpClient(c Config, l log.Service) *resty.Client {
 func (c *client) executeRequest(ctx context.Context, reqFunc func(ctx context.Context) (*resty.Response, error)) (*resty.Response, error) {
 	if c.requester.breaker != nil {
 		result, err := c.requester.breaker.Execute(func() (interface{}, error) {
-			return reqFunc(ctx)
+			resp, err := reqFunc(ctx)
+
+			if err != nil {
+				c.logger.Warn(ctx, map[string]interface{}{
+					"event": "request_failed",
+					"error": err,
+				})
+				return nil, err
+			}
+
+			if resp != nil && resp.StatusCode() >= 500 {
+				c.logger.Warn(ctx, map[string]interface{}{
+					"event":  "server_error",
+					"status": resp.StatusCode(),
+				})
+				return nil, fmt.Errorf("server error: HTTP %d", resp.StatusCode())
+			}
+
+			return resp, nil
 		})
+
 		if err != nil {
+			if errors.Is(err, gobreaker.ErrOpenState) {
+				c.logger.Error(ctx, err, "circuit breaker is open", map[string]interface{}{
+					"event": "circuit_breaker_open",
+					"error": err,
+				})
+				return nil, fmt.Errorf("circuit breaker open: %w", err)
+			}
 			return nil, err
 		}
 		return result.(*resty.Response), nil

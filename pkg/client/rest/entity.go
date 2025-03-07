@@ -4,7 +4,7 @@ import (
 	"context"
 	"github.com/go-resty/resty/v2"
 	"github.com/skolldire/web-simplify/pkg/utilities/log"
-	"github.com/sony/gobreaker"
+	"github.com/sony/gobreaker/v2"
 	"time"
 )
 
@@ -24,7 +24,7 @@ type Config struct {
 	CBMaxRequests      uint32
 	CBInterval         time.Duration
 	CBTimeout          time.Duration
-	CBRequestThreshold int
+	CBRequestThreshold uint32
 	CBFailureRateLimit float64
 }
 
@@ -44,5 +44,5 @@ type client struct {
 
 type requester struct {
 	httpClient *resty.Client
-	breaker    *gobreaker.CircuitBreaker
+	breaker    *gobreaker.CircuitBreaker[any]
 }

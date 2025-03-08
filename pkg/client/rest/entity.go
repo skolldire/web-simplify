@@ -9,14 +9,22 @@ import (
 )
 
 const (
-	BackoffFactor       = 2.0
-	MaxJitterPercentage = 0.5
+	BackoffFactor                    = 2.0
+	MaxJitterPercentage              = 0.5
+	DefaultRetryCount         uint32 = 3
+	DefaultRetryWaitTime             = 100 * time.Millisecond
+	DefaultRetryMaxWaitTime          = 500 * time.Millisecond
+	DefaultCBMaxRequests      uint32 = 5
+	DefaultCBInterval                = 10 * time.Second
+	DefaultCBTimeout                 = 5 * time.Second
+	DefaultCBRequestThreshold uint32 = 5
+	DefaultCBFailureRateLimit        = 50.0
 )
 
 type Config struct {
 	BaseURL            string
 	WithRetry          bool
-	RetryCount         int
+	RetryCount         uint32
 	RetryWaitTime      time.Duration
 	RetryMaxWaitTime   time.Duration
 	WithCB             bool

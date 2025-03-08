@@ -16,6 +16,7 @@ import (
 var _ Service = (*client)(nil)
 
 func NewClient(cfg Config, l log.Service) Service {
+	setDefaultConfig(&cfg)
 	r := &requester{
 		httpClient: createHttpClient(cfg, l),
 		breaker:    createCB(cfg, l),
@@ -25,6 +26,40 @@ func NewClient(cfg Config, l log.Service) Service {
 		baseURL:   cfg.BaseURL,
 		requester: r,
 		logger:    l,
+	}
+}
+
+func setDefaultConfig(cfg *Config) {
+	defaults := map[*uint32]uint32{
+		&cfg.RetryCount:         DefaultRetryCount,
+		&cfg.CBMaxRequests:      DefaultCBMaxRequests,
+		&cfg.CBRequestThreshold: DefaultCBRequestThreshold,
+	}
+	for k, v := range defaults {
+		if *k == 0 {
+			*k = v
+		}
+	}
+
+	defaultsFloat := map[*float64]float64{
+		&cfg.CBFailureRateLimit: DefaultCBFailureRateLimit,
+	}
+	for k, v := range defaultsFloat {
+		if *k == 0 {
+			*k = v
+		}
+	}
+
+	defaultsDuration := map[*time.Duration]time.Duration{
+		&cfg.RetryWaitTime:    DefaultRetryWaitTime,
+		&cfg.RetryMaxWaitTime: DefaultRetryMaxWaitTime,
+		&cfg.CBInterval:       DefaultCBInterval,
+		&cfg.CBTimeout:        DefaultCBTimeout,
+	}
+	for k, v := range defaultsDuration {
+		if *k == 0 {
+			*k = v
+		}
 	}
 }
 
@@ -112,7 +147,7 @@ func createHttpClient(c Config, l log.Service) *resty.Client {
 	client := resty.New()
 
 	if c.WithRetry {
-		client.SetRetryCount(c.RetryCount).
+		client.SetRetryCount(int(c.RetryCount)).
 			SetRetryAfter(retryAfterFunc(c.RetryWaitTime, c.RetryMaxWaitTime, l)).
 			AddRetryCondition(func(r *resty.Response, err error) bool {
 				return err != nil || r.StatusCode() >= 500

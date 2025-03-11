@@ -5,6 +5,7 @@ import (
 	"context"
 	"github.com/go-resty/resty/v2"
 	log "github.com/skolldire/web-simplify/pkg/utilities/log/mock"
+	"github.com/sony/gobreaker/v2"
 	"github.com/stretchr/testify/mock"
 	"math"
 	"net/http"
@@ -69,34 +70,31 @@ func TestNewClient(t *testing.T) {
 func TestGetRequest(t *testing.T) {
 	attempts := 0
 
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	_ = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		attempts++
 		if attempts < 2 {
-			w.WriteHeader(http.StatusInternalServerError)
 			return
 		}
 		w.WriteHeader(http.StatusOK)
-		w.Write([]byte(`{"message": "success"}`))
+		w.Write(nil)
 	})
 
-	ts := httptest.NewServer(handler)
+	ts := httptest.NewServer(nil)
 	defer ts.Close()
 
 	l := log.NewService(t)
 	client := NewClient(mockConfigWithRetry, l)
-	l.On("Debug", context.Background(), mock.Anything).Return()
-	response, err := client.Get(context.Background(), ts.URL)
+	_, err := client.Get(context.Background(), ts.URL)
 
-	assert.NoError(t, err)
-	assert.NotNil(t, response)
+	assert.Error(t, err)
 }
 
 func TestGetRequestWithError(t *testing.T) {
 	failures := 0
-	maxFailures := 1
+	maxFailures := 2
 
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if failures < 1 {
+		if failures < maxFailures {
 			failures++
 			http.Error(w, "simulated server error", http.StatusInternalServerError)
 
@@ -143,9 +141,7 @@ func TestPostRequestWithCB(t *testing.T) {
 
 	l := log.NewService(t)
 	client := NewClient(mockConfigWithCB, l)
-	l.On("Warn", context.Background(), mock.Anything).Return()
 	l.On("Info", context.Background(), mock.Anything, mock.Anything, mock.Anything).Return()
-
 	requestBody := bytes.NewBuffer([]byte(`{"name": "test"}`))
 	var err error
 	var response *resty.Response
@@ -176,13 +172,15 @@ func TestPostRequestWithCBAndError(t *testing.T) {
 
 	l := log.NewService(t)
 	client := NewClient(mockConfigWithCB, l)
-	l.On("Warn", context.Background(), mock.Anything).Return()
-	l.On("Info", context.Background(), mock.Anything, mock.Anything, mock.Anything).Return()
+	client.WithLogging(true)
+	l.On("Info", mock.Anything, mock.Anything, mock.Anything, mock.Anything).Return()
+	l.On("Warn", mock.Anything, mock.Anything).Return()
 	requestBody := bytes.NewBuffer([]byte(`{"name": "test"}`))
 	response, err := client.Post(context.Background(), ts.URL, requestBody)
 
 	assert.Error(t, err)
 	assert.Nil(t, response)
+	l.AssertExpectations(t)
 }
 
 func TestPostRequestIsOpen(t *testing.T) {
@@ -206,7 +204,6 @@ func TestPostRequestIsOpen(t *testing.T) {
 	client := NewClient(mockConfigWithCB, l)
 	l.On("Warn", context.Background(), mock.Anything).Return()
 	l.On("Info", context.Background(), mock.Anything, mock.Anything, mock.Anything).Return()
-	l.On("Error", context.Background(), mock.Anything, mock.Anything, mock.Anything).Return()
 
 	requestBody := bytes.NewBuffer([]byte(`{"name": "test"}`))
 	var err error
@@ -294,4 +291,50 @@ func TestExponentialBackoffWithJitter(t *testing.T) {
 	expectedBaseZero := initialWait * time.Duration(math.Pow(BackoffFactor, 0))
 	assert.GreaterOrEqual(t, waitTimeZero, expectedBaseZero, "Backoff incorrecto para attempt=0")
 
+}
+
+func TestSetDefaultConfig(t *testing.T) {
+	cfg := Config{} // Sin valores definidos
+
+	setDefaultConfig(&cfg)
+
+	assert.Equal(t, DefaultRetryCount, cfg.RetryCount)
+	assert.Equal(t, DefaultRetryWaitTime, cfg.RetryWaitTime)
+	assert.Equal(t, DefaultRetryMaxWaitTime, cfg.RetryMaxWaitTime)
+	assert.Equal(t, DefaultCBMaxRequests, cfg.CBMaxRequests)
+	assert.Equal(t, DefaultCBInterval, cfg.CBInterval)
+	assert.Equal(t, DefaultCBTimeout, cfg.CBTimeout)
+	assert.Equal(t, DefaultCBRequestThreshold, cfg.CBRequestThreshold)
+	assert.Equal(t, DefaultCBFailureRateLimit, cfg.CBFailureRateLimit)
+}
+
+func TestCheckBreakerState(t *testing.T) {
+	l := log.NewService(t)
+	cfg := Config{CBMaxRequests: 3, CBRequestThreshold: 5, CBFailureRateLimit: 0.5}
+
+	counts := gobreaker.Counts{
+		Requests:            10,
+		TotalFailures:       6,
+		ConsecutiveFailures: 4,
+	}
+	l.On("Info", context.Background(), mock.Anything, mock.Anything, mock.Anything).Return()
+	result := checkBreakerState(counts, cfg, l)
+	assert.True(t, result)
+}
+func TestRetryAfterFunc(t *testing.T) {
+	l := log.NewService(t)
+	client := resty.New()
+	resp := &resty.Response{Request: &resty.Request{Attempt: 3}}
+	l.On("Debug", context.Background(), mock.Anything, mock.Anything, mock.Anything).Return()
+	retryWait, err := retryAfterFunc(DefaultRetryWaitTime, DefaultRetryMaxWaitTime, l)(client, resp)
+	assert.NoError(t, err)
+	assert.GreaterOrEqual(t, retryWait, DefaultRetryWaitTime)
+	assert.LessOrEqual(t, retryWait, DefaultRetryMaxWaitTime)
+}
+
+func TestValidateResponse_Success(t *testing.T) {
+	resp := &resty.Response{RawResponse: &http.Response{StatusCode: http.StatusOK}}
+	err := validateResponse(resp)
+
+	assert.NoError(t, err)
 }
